@@ -1,0 +1,9 @@
+{
+  "commit": "50275ca5e47fc06c80b7e34f93f31f78e219147f",
+  "exit_code": 0,
+  "seconds": 12.98,
+  "stdout": "Processed 20 companies. Wrote results.csv. Your points: 4, 5, 7. Point accuracy: 60/60 (balanced: 100.0%).\n",
+  "offline_tests": 7,
+  "tested_hw3_sha256": "e31cd29b1531b32143d6aa6d4e016953709663fa561612d4f20a3517e87e23d8",
+  "commit_note": "Local verification commit; code hash above identifies the exact tested implementation independently of publication history."
+}
