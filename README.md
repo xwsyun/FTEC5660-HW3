@@ -170,14 +170,76 @@ for each public company. Grading uses a private set of about 20 unseen
 companies with the same tools and the same answer key rules, but different
 names and wording, and scores your 3 points only.
 
-## Homework 3 solution:
-> to students: this is your report, see the homework description.
+## Homework 3 solution
+
+**SUN Xianwang | Individual homework**
 
 ### My 3 points and rules
-> for each point: why you chose it, your PASS rule in one or two sentences, and the evidence it uses. Quote Fisher where it helps.
+
+I choose **4 (sales organization), 5 (profit margin), and 7 (labour relations)**. Together they test customer-facing execution, financial economics and the treatment of employees. They also require two different forms of reasoning: interpreting testimony and calculating a financial ratio.
+
+| Point | Why this point / PASS rule | Evidence and implementation |
+| --- | --- | --- |
+| **4: Sales organization** | Skilled sales support can turn products into repeat business. PASS when an informed outsider describes knowledgeable, helpful salespeople who solve problems, earn trust or support customers beyond taking orders; FAIL for passive, unreliable or unhelpful selling. | Interview `customer` about `sales_team`; use `competitor` only if evidence is insufficient. The LLM interprets the testimony in context. |
+| **5: Profit margin** | Sales growth is not enough if little operating profit remains. PASS when FY2025 operating margin is **positive and at least the median for the company's own industry**; otherwise FAIL. | One `sql_query` aggregates FY2025 revenue and all three operating cost categories, joins the correct industry median, and makes the comparison in SQL. |
+| **7: Labour relations** | Fair treatment and retention support durable execution. PASS for informed testimony of fair treatment, manageable workloads, responsive management or stable retention; FAIL for continuing overwork, unfair treatment, ignored grievances or persistent turnover. | Interview `current_employee` about `working_conditions`; use `former_employee` only if evidence is insufficient. |
+
+These rules follow Fisher's emphasis on asking customers and competitors about selling, comparing operating economics, and examining how employees are actually treated [1, Part One, Chapter 3, points 4, 5 and 7; printed pp. 59–67]. They are **my operational rules for this exercise**, not numerical thresholds claimed to have been specified by Fisher. In particular, Fisher recommends reviewing margins over several years and recognises growth-investment exceptions. My FY2025 median rule is a deliberately narrower, transparent proxy using the latest complete calendar year in the supplied data. It does not capture those exceptions.
+
+The margin calculation is `(SUM(revenue) - SUM(cost_of_sales + selling_admin + research_development)) / SUM(revenue) * 100`. Revenue and costs are aggregated independently before joining, avoiding the multiplication of order and cost rows. Amounts remain in USD thousands, so units cancel. The SQL `CASE` uses unrounded values; the tool's two-decimal display cannot alter a boundary decision. Twelve cost months and positive revenue are required before accepting the calculation.
 
 ### Design
-> a visualization of your agent design and one paragraph describing it.
+
+```mermaid
+flowchart TD
+    A[Company-scoped LangChain tools] --> B[Fixed plan: points 4, 5, 7]
+    B --> C[SQL: aggregate FY2025 revenue and costs]
+    C --> D[Compare unrounded margin with own-industry median]
+    D --> E[Point 5 verdict and numeric evidence]
+    B --> F[Interview customer: sales team]
+    B --> G[Interview employee: working conditions]
+    F --> H[LangChain prompt + deepseek-v4-flash + JSON parser]
+    G --> H
+    H --> I{Sufficient evidence and valid exact quotes?}
+    I -->|Yes| J[Points 4 and 7 with cited testimony]
+    I -->|Insufficient| K[One knowledgeable backup per uncertain point]
+    K --> L[One bounded reassessment]
+    I -->|Invalid JSON or quote| L
+    L --> O{Validated?}
+    O -->|Yes| J
+    O -->|No| P[Explicit FAIL fallback with error note]
+    P --> M
+    E --> M[Combine verdicts and evidence summary]
+    J --> M
+    M --> N[Provided runner writes and scores results.csv]
+```
+
+This is a **planned LangChain workflow**: Python routes each point to its appropriate company-scoped tool, while a reusable `ChatPromptTemplate | ChatDeepSeek | JsonOutputParser` chain interprets the qualitative evidence. The model does not choose arbitrary tools or perform arithmetic. Three companies can run concurrently. A normal company needs one SQL call, two interviews and one model call. If testimony is insufficient, the workflow asks a knowledgeable backup and reassesses once, using at most four interviews, below the limit of ten. Invalid JSON or unsupported quotations trigger one repair attempt using already collected evidence. The final summary combines SQL evidence with the model's explanation and validated interview quotation. Sources are treated as data, not instructions; the system prompt rejects embedded requests to change rules. Exact-quote checks ensure traceability but do not prove the interpretation is correct.
+
+The workflow deliberately does not read management documents: none of the three selected criteria needs an unsupported management claim. All company evidence comes exclusively from the supplied `sql_query` and `interview` tools. The solution does not read `company.db`, `interviews.dat`, company documents or answer keys directly, and does not use web search. The provided runner still loads tools and scores the public answer key as intended. Company/folder names are used only as output identifiers, not decision features.
+
+Model settings are `deepseek-v4-flash`, temperature 0, non-thinking mode, JSON output, 1,600 output tokens, a 45-second API timeout and no hidden client retries. There are at most two model calls per company and an overall 150-second company deadline. With 20 companies and concurrency three, the scheduled deadline budget is at most 17.5 minutes plus normal runner overhead. On an unresolved operational error, the code preserves any independently obtained verdict and returns explicit **FAIL fallback** entries for unavailable points so that the batch can finish. The summary labels these as operational/insufficient-evidence fallbacks, not verified adverse findings. This convention can create false negatives; a production system should instead expose an abstain/review state.
 
 ### Results
-> your point score on `public_test`, the companies where your verdicts disagree with the public answers, and why.
+
+The first two full public runs each produced **60/60 correct point decisions and balanced accuracy 100.0%**. For the 20 companies and three selected points, all **42 expected PASS** and **18 expected FAIL** decisions were correct. Each run used exactly **two interviews per company**, with **zero operational fallbacks**. The second run completed in **12.84 seconds** on the test machine; timing will depend on API availability.
+
+There were **no disagreements with the public answers**, so there are no mismatch-specific explanations to report. The fixed rules and point choices were established before checking the first scored run; no company-specific exceptions were added. `evaluation/public_run1.csv` and `evaluation/public_run2.csv` preserve every verdict and evidence summary. The third run, from a fresh Git clone, also achieved **60/60 and balanced 100.0%**, completing in **12.98 seconds**. See `evaluation/public_run3_fresh_clone.csv` and `evaluation/fresh_clone_check.json`. All three runs agree on every verdict; their mean balanced score is **100.0%**. The fresh clone also passed all seven offline tests.
+
+For example, **Ashgrove Labs** is FAIL on points 4 and 7: its customer's statement describes order-taking without useful advice, while its employee reports constant overtime and turnover. It is PASS on point 5, with FY2025 operating margin **13.36%**, above its industry median **9.40%**. These different verdicts show why a favourable financial ratio should not erase negative stakeholder evidence.
+
+Seven offline tests cover margin boundaries, own-industry selection, incomplete financial evidence, normal interview budgets, uncertainty-driven backup routing, API outages, fabricated quotation rejection and isolation of SQL failures. Run them with `python -m unittest discover -s tests -v`. They use only synthetic in-memory data and mock tools, never the real company files or public labels.
+
+Public performance is not a private-test guarantee. The interview language in the public data is relatively direct, and real-world sources can conflict, omit context or be biased. Temperature zero does not guarantee deterministic model service behaviour. Chapter 4 of Fisher also makes the investor's circumstances and ability to investigate relevant; passing these three checks is neither a full fifteen-point assessment nor a suitability or buy recommendation.
+
+### Reproducibility and acknowledgement
+
+Use the setup commands above, create your own untracked `.env`, then run `python hw3.py --data-folder public_test`. The original tool, runner and scoring section of `hw3.py` is unchanged. Tested direct dependency versions are recorded in `evaluation/environment.json`; the starter's dependency ranges are retained. No API key is stored in code, notebook output or results.
+
+ChatGPT (OpenAI) assisted with interpreting the assignment, designing and implementing the workflow, debugging and testing, and drafting this report and the reflection. The required runtime model for company judgments is DeepSeek's `deepseek-v4-flash` through LangChain. Public scores and examples above come from actual executions, not estimated results.
+
+### References
+
+1. Philip A. Fisher, *Common Stocks and Uncommon Profits and Other Writings*, Part One, Chapters 3 and 4. [Course-provided book](https://drive.google.com/file/d/1v2nMaz9pjnrCtMwB1kLWod4uOBJYmJiV/view). Especially points 4, 5 and 7, printed pp. 59–67; Chapter 4, pp. 79–88.
+2. [Instructor's Homework 3 starter and specification](https://github.com/BINH2702/FTEC5660-HW3), upstream commit `5fa8c373434c5aa6ee7c681248edeb900f7a1211`.
+3. [LangChain ChatDeepSeek reference](https://reference.langchain.com/python/langchain-deepseek/chat_models/ChatDeepSeek), [DeepSeek JSON output](https://api-docs.deepseek.com/guides/json_mode/) and [thinking-mode controls](https://api-docs.deepseek.com/guides/thinking_mode/), accessed 16 November 2026. These implementation references are not sources of company evidence.
